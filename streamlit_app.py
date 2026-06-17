@@ -104,14 +104,10 @@ def pagina_enderecos(revisor):
     obs = st.text_input("Observações (opcional)", value=str(r.get("Observacoes", "")), key=f"o{i}")
 
     def salvar(decisao, bairro_final):
-        impacto = ""
-        if decisao == "Confirmar":
-            impacto = "Direto" if bairro_final in NUCLEO else ("Indireto" if bairro_final else "")
         data = datetime.now().strftime("%d/%m/%Y %H:%M")
-        valores = [decisao, bairro_final, impacto, revisor, data, obs]
-        gravar(ws, linha, "K", valores)  # colunas K..P
-        # atualiza cópia local
-        for k, v in zip(["Decisao", "Bairro_Confirmado", "Impacto_Final", "Revisor", "Data_Revisao", "Observacoes"], valores):
+        valores = [decisao, bairro_final, revisor, data, obs]
+        gravar(ws, linha, "K", valores)  # colunas K..O
+        for k, v in zip(["Decisao", "Bairro_Confirmado", "Revisor", "Data_Revisao", "Observacoes"], valores):
             dados[i][k] = v
         st.session_state.end_pos = pos + 1
         st.rerun()
