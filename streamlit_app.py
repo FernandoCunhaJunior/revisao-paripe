@@ -1,7 +1,9 @@
 import json
 from datetime import datetime
+from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -188,6 +190,17 @@ def pagina_duplicidades(revisor):
         st.caption("Informe seu nome na barra lateral para liberar os botões.")
 
 
+def pagina_painel():
+    st.subheader("📊 Painel da população afetada")
+    caminho = Path(__file__).parent / "Dashboard_Paripe_Tubarao.html"
+    if not caminho.exists():
+        st.warning("O arquivo 'Dashboard_Paripe_Tubarao.html' ainda não está no repositório. "
+                   "Suba-o junto com o app para o painel aparecer aqui.")
+        return
+    html = caminho.read_text(encoding="utf-8")
+    components.html(html, height=2400, scrolling=True)
+
+
 def pagina_resumo():
     st.subheader("📊 Progresso da revisão")
     for aba, rotulo in [("Revisar_Enderecos", "Endereços"), ("Revisar_Duplicidades", "Duplicidades")]:
@@ -207,7 +220,7 @@ def main():
     with st.sidebar:
         st.header("Revisão Paripe/Tubarão")
         revisor = st.text_input("Seu nome (revisor)", key="revisor")
-        pagina = st.radio("Página", ["Endereços", "Duplicidades", "Resumo"])
+        pagina = st.radio("Página", ["Painel", "Endereços", "Duplicidades", "Resumo"])
         if st.button("🔄 Recarregar dados da planilha"):
             for k in ["end_ws", "end_dados", "dup_ws", "dup_dados"]:
                 st.session_state.pop(k, None)
@@ -218,7 +231,9 @@ def main():
         st.caption("As decisões são gravadas direto na planilha do Google e ficam visíveis para toda a equipe.")
 
     try:
-        if pagina == "Endereços":
+        if pagina == "Painel":
+            pagina_painel()
+        elif pagina == "Endereços":
             pagina_enderecos(revisor)
         elif pagina == "Duplicidades":
             pagina_duplicidades(revisor)
