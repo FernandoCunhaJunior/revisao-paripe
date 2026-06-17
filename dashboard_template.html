@@ -1,0 +1,137 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel — População Afetada · São Tomé de Paripe / Tubarão</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{--navy:#16243f;--blue:#2e5496;--teal:#2a8a8a;--amber:#c98a1a;--red:#b5443a;--ink:#1d2433;--muted:#6b7488;--line:#e3e7ef;--bg:#f4f6fa;--card:#fff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+header{background:linear-gradient(120deg,var(--navy),var(--blue));color:#fff;padding:22px 28px}
+header h1{font-size:20px;font-weight:700}header p{font-size:13px;opacity:.85;margin-top:4px}
+.lgpd{display:inline-block;margin-top:10px;font-size:11px;background:rgba(255,255,255,.14);padding:5px 11px;border-radius:20px}
+.wrap{max-width:1280px;margin:0 auto;padding:22px}
+.filters{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;margin-bottom:14px}
+.fgroup{display:flex;flex-direction:column;gap:5px}.fgroup label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+select{font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;min-width:170px;color:var(--ink)}
+.reset{margin-left:auto;font-size:13px;padding:9px 16px;border:none;border-radius:8px;background:var(--navy);color:#fff;cursor:pointer}.reset:hover{background:var(--blue)}
+.chips{min-height:20px;margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{background:var(--blue);color:#fff;font-size:12px;padding:4px 10px;border-radius:14px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.chip b{font-weight:400;opacity:.85}.chips .hint{font-size:12px;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;position:relative;overflow:hidden}
+.kpi .v{font-size:26px;font-weight:800;color:var(--navy);line-height:1.1}.kpi .l{font-size:11.5px;color:var(--muted);margin-top:5px;font-weight:600}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--blue)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.card h3{font-size:13.5px;font-weight:700;margin-bottom:14px;display:flex;justify-content:space-between}.card h3 span{font-weight:500;color:var(--muted);font-size:11px}
+.full{grid-column:1/-1}.cwrap{position:relative;height:300px}
+#map{height:460px;border-radius:10px;border:1px solid var(--line)}
+.note{font-size:11.5px;color:var(--muted);margin-top:10px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;margin-top:10px}
+.legend i{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle;opacity:.6}
+.pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:12px;margin:2px}
+.pill.prov{background:#fdeceb;color:var(--red)}.pill.poss{background:#fdf3e0;color:var(--amber)}.pill.rev{background:#e9f3f3;color:var(--teal)}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Painel da População Afetada — São Tomé de Paripe & Tubarão</h1>
+<p>Contaminação química · Salvador/BA · 6 bases consolidadas · Visualização agregada e pseudonimizada</p>
+<span class="lgpd">🔒 Dados agregados (LGPD) — sem nome, CPF, endereço individual ou identificadores</span></header>
+<div class="wrap">
+<div class="filters">
+<div class="fgroup"><label>Bairro</label><select id="fBairro"></select></div>
+<div class="fgroup"><label>Categoria</label><select id="fCat"></select></div>
+<div class="fgroup"><label>Fonte (lista)</label><select id="fSrc"></select></div>
+<button class="reset" onclick="clearAll()">Limpar filtros</button></div>
+<div class="chips" id="chips"></div>
+<div class="kpis" id="kpis"></div>
+<div class="grid">
+<div class="card full"><h3>Mapa — concentração por rua <span id="mapsub"></span></h3>
+<div id="map"></div>
+<div class="legend"><span><i style="background:var(--red)"></i>Núcleo (São Tomé de Paripe / Tubarão)</span>
+<span><i style="background:var(--blue)"></i>Entorno</span>
+<span>● rua geocodificada &nbsp; ○ tracejado = centro do bairro</span>
+<span style="color:var(--muted)">Clique num círculo para filtrar pelo bairro.</span></div>
+<p class="note">Cada círculo é uma rua (ou o centro do bairro, quando a rua não foi geocodificada), dimensionado pela quantidade de pessoas no filtro. Sem marcação de residência individual — agregação por rua (LGPD).</p></div>
+<div class="card"><h3>Pessoas por bairro <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chBairro"></canvas></div></div>
+<div class="card"><h3>Pessoas por categoria <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chCat"></canvas></div></div>
+<div class="card"><h3>Faixa etária <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chFaixa"></canvas></div></div>
+<div class="card"><h3>Sexo <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chSexo"></canvas></div></div>
+<div class="card"><h3>Pessoas por fonte (sobreposição) <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chSrc"></canvas></div></div>
+<div class="card"><h3>Presença em nº de fontes</h3><div class="cwrap"><canvas id="chNl"></canvas></div></div>
+<div class="card full"><h3>Duplicidades pendentes de revisão humana</h3><div id="dups"></div>
+<p class="note">Pares não fundidos automaticamente — exigem conferência antes do uso.</p></div>
+</div></div>
+<div class="foot" style="text-align:center;font-size:11.5px;color:var(--muted);padding:24px">Base detalhada (com identificadores) mantida em arquivo de acesso restrito.</div>
+<script>
+const DATA=__DATA__;
+const C={navy:'#16243f',blue:'#2e5496',teal:'#2a8a8a',amber:'#c98a1a',red:'#b5443a'};
+const PAL=['#2e5496','#2a8a8a','#c98a1a','#b5443a','#6a5acd','#3a9b6e','#9c6ade','#c0607a','#5b7fb5','#7a8aa0'];
+const $=id=>document.getElementById(id);
+let F={bairro:'',cat:'',src:'',faixa:'',sexo:''};
+function fillSel(id,arr,all,fkey){let s=$(id);s.innerHTML='<option value="">'+all+'</option>';
+ arr.forEach((v,i)=>{let o=document.createElement('option');o.value=i;o.textContent=v;s.appendChild(o);});
+ s.onchange=()=>{F[fkey]=s.value;render();};}
+fillSel('fBairro',DATA.bairros,'Todos os bairros','bairro');
+fillSel('fCat',DATA.cats,'Todas as categorias','cat');
+fillSel('fSrc',DATA.sourcesFull,'Todas as fontes','src');
+function clearAll(){F={bairro:'',cat:'',src:'',faixa:'',sexo:''};syncSel();render();}
+function syncSel(){$('fBairro').value=F.bairro;$('fCat').value=F.cat;$('fSrc').value=F.src;}
+function toggle(fkey,i){i=String(i);F[fkey]=(F[fkey]===i)?'':i;syncSel();render();}
+function filtered(){return DATA.recs.filter(r=>
+ (F.bairro===''||r[0]==F.bairro)&&(F.cat===''||r[1]==F.cat)&&(F.faixa===''||r[2]==F.faixa)&&
+ (F.sexo===''||r[3]==F.sexo)&&(F.src===''||(r[6]&(1<<F.src))));}
+function cnt(rows,k,n){let a=Array(n).fill(0);rows.forEach(r=>a[r[k]]++);return a;}
+function chips(){let labs={bairro:DATA.bairros,cat:DATA.cats,faixa:DATA.faixas,sexo:DATA.sexos,src:DATA.sources};
+ let names={bairro:'Bairro',cat:'Categoria',faixa:'Faixa',sexo:'Sexo',src:'Fonte'};let h='';
+ Object.keys(F).forEach(k=>{if(F[k]!==''){h+='<span class="chip" onclick="toggle(\''+k+'\','+F[k]+')"><b>'+names[k]+':</b> '+labs[k][F[k]]+' ✕</span>';}});
+ $('chips').innerHTML=h||'<span class="hint">Nenhum filtro ativo — clique nas barras, no mapa ou use os menus acima.</span>';}
+let ch={};
+function clickH(fkey,arr){return (e,els,c)=>{if(!els.length)return;let lab=c.data.labels[els[0].index];let i=arr.indexOf(lab);if(i>=0)toggle(fkey,i);};}
+function mk(id,cfg){if(ch[id])ch[id].destroy();ch[id]=new Chart($(id),cfg);}
+function bar(l,d,col,h,onclick){return{type:'bar',data:{labels:l,datasets:[{data:d,backgroundColor:col,borderRadius:4,maxBarThickness:32}]},
+ options:{indexAxis:h?'y':'x',responsive:true,maintainAspectRatio:false,onClick:onclick,
+ onHover:(e,el)=>{e.native.target.style.cursor=el.length?'pointer':'default';},
+ plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:11}}},y:{ticks:{font:{size:11}}}}}};}
+let map,layer;
+function initMap(){map=L.map('map',{scrollWheelZoom:false}).setView([-12.83,-38.478],14);
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+ layer=L.layerGroup().addTo(map);}
+function drawMap(rows){layer.clearLayers();let agg={};
+ rows.forEach(r=>{if(r[7]>=0)agg[r[7]]=(agg[r[7]]||0)+1;});
+ let max=Math.max(1,...Object.values(agg));let pts=[];
+ for(let pi in agg){let p=DATA.points[pi];let n=agg[pi];let nuc=p[4]===1;let street=p[3]===1;
+  let rad=6+30*Math.sqrt(n/max);pts.push([p[0],p[1]]);
+  let m=L.circleMarker([p[0],p[1]],{radius:rad,color:nuc?C.red:C.blue,weight:2,
+   dashArray:street?null:'4 3',fillColor:nuc?C.red:C.blue,fillOpacity:street?.5:.18});
+  m.bindPopup('<b>'+p[2]+'</b><br>'+n.toLocaleString('pt-BR')+' pessoas no filtro'+(street?'':'<br><i>posição aproximada</i>')+'<br><small>clique p/ filtrar bairro</small>');
+  m.on('click',()=>toggle('bairro',p[5]));m.addTo(layer);}
+ if(pts.length)map.fitBounds(pts,{padding:[50,50],maxZoom:15});
+ $('mapsub').textContent=DATA.geoStreets+' ruas geocodificadas · '+Object.keys(agg).length+' pontos no filtro';}
+function kpi(v,l){return '<div class="kpi"><div class="v">'+v.toLocaleString('pt-BR')+'</div><div class="l">'+l+'</div></div>';}
+function render(){let rows=filtered();let n=rows.length;chips();
+ let multi=rows.filter(r=>r[5]>1).length;let nb=new Set(rows.map(r=>r[0])).size;
+ $('kpis').innerHTML=kpi(n,'Pessoas únicas (filtro)')+kpi(DATA.brutos,'Registros brutos')
+  +kpi(multi,'Em mais de uma fonte')+kpi(nb,'Bairros no filtro');
+ let cb=cnt(rows,0,DATA.bairros.length);let bi=DATA.bairros.map((b,i)=>[b,cb[i]]).filter(x=>x[1]).sort((a,b)=>b[1]-a[1]).slice(0,10);
+ mk('chBairro',bar(bi.map(x=>x[0]),bi.map(x=>x[1]),bi.map(x=>(x[0]==='São Tomé de Paripe'||x[0]==='Tubarão')?C.red:C.blue),true,clickH('bairro',DATA.bairros)));
+ let cc=cnt(rows,1,DATA.cats.length);let ci=DATA.cats.map((c,i)=>[c,cc[i]]).filter(x=>x[1]).sort((a,b)=>b[1]-a[1]);
+ mk('chCat',bar(ci.map(x=>x[0]),ci.map(x=>x[1]),ci.map((_,i)=>PAL[i%PAL.length]),true,clickH('cat',DATA.cats)));
+ const O=['0–11 (criança)','12–17 (adolescente)','18–29','30–44','45–59','60+ (idoso)','(n/d)'];
+ let cf=cnt(rows,2,DATA.faixas.length);let fi=O.map(o=>[o,DATA.faixas.indexOf(o)>=0?cf[DATA.faixas.indexOf(o)]:0]).filter(x=>x[1]);
+ mk('chFaixa',bar(fi.map(x=>x[0]),fi.map(x=>x[1]),C.blue,false,clickH('faixa',DATA.faixas)));
+ let cs=cnt(rows,3,DATA.sexos.length);let si=DATA.sexos.map((s,i)=>[s,cs[i]]).filter(x=>x[1]);
+ mk('chSexo',{type:'doughnut',data:{labels:si.map(x=>x[0]),datasets:[{data:si.map(x=>x[1]),backgroundColor:PAL,borderWidth:2,borderColor:'#fff'}]},
+  options:{responsive:true,maintainAspectRatio:false,cutout:'58%',onClick:clickH('sexo',DATA.sexos),
+  onHover:(e,el)=>{e.native.target.style.cursor=el.length?'pointer':'default';},plugins:{legend:{position:'bottom',labels:{font:{size:12},padding:12}}}}});
+ let sc=Array(DATA.sources.length).fill(0);rows.forEach(r=>{for(let i=0;i<DATA.sources.length;i++)if(r[6]&(1<<i))sc[i]++;});
+ mk('chSrc',bar(DATA.sources,sc,C.teal,false,clickH('src',DATA.sources)));
+ let nl=[0,0,0,0,0,0];rows.forEach(r=>{if(r[5]>=1&&r[5]<=6)nl[r[5]-1]++;});
+ mk('chNl',bar(['1','2','3','4','5','6'],nl,C.amber,false,null));
+ drawMap(rows);}
+let dh='';const L2={'Provável duplicidade':'prov','Possível duplicidade':'poss','Precisa de revisão humana':'rev'};
+Object.entries(DATA.dupc).forEach(([k,v])=>{dh+='<span class="pill '+(L2[k]||'rev')+'">'+k+': <b>'+v+'</b></span>';});
+$('dups').innerHTML=dh+'<span class="pill rev">Total: <b>'+DATA.dups+'</b></span>';
+initMap();render();
+</script></body></html>
