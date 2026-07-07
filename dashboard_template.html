@@ -127,8 +127,8 @@ function render(){let rows=filtered();let n=rows.length;chips();
   onHover:(e,el)=>{e.native.target.style.cursor=el.length?'pointer':'default';},plugins:{legend:{position:'bottom',labels:{font:{size:12},padding:12}}}}});
  let sc=Array(DATA.sources.length).fill(0);rows.forEach(r=>{for(let i=0;i<DATA.sources.length;i++)if(r[6]&(1<<i))sc[i]++;});
  mk('chSrc',bar(DATA.sources,sc,C.teal,false,clickH('src',DATA.sources)));
- let nl=[0,0,0,0,0,0];rows.forEach(r=>{if(r[5]>=1&&r[5]<=6)nl[r[5]-1]++;});
- mk('chNl',bar(['1','2','3','4','5','6'],nl,C.amber,false,null));
+ let nl=[0,0,0,0,0,0,0];rows.forEach(r=>{if(r[5]>=1&&r[5]<=7)nl[r[5]-1]++;});
+ mk('chNl',bar(['1','2','3','4','5','6','7'],nl,C.amber,false,null));
  drawMap(rows);}
 let dh='';const L2={'Provável duplicidade':'prov','Possível duplicidade':'poss','Precisa de revisão humana':'rev'};
 Object.entries(DATA.dupc).forEach(([k,v])=>{dh+='<span class="pill '+(L2[k]||'rev')+'">'+k+': <b>'+v+'</b></span>';});
