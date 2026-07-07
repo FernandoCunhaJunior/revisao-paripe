@@ -12,8 +12,9 @@ st.set_page_config(page_title="Revisão — Paripe/Tubarão", page_icon="🩺", 
 
 PASTA = Path(__file__).parent
 LISTAS = ["Bahia Pesca A-88 (APEMJA)","Bahia Pesca Z-67","Ministério da Pesca (RGP)",
-          "SEMOP Paripe (Ambulantes)","Vereadora Eliete (Pescadores)","Secretaria de Saúde (Moradores)"]
-SRC = ["A-88","Z-67","Ministério","SEMOP","Vereadora","Saúde"]
+          "SEMOP Paripe (Ambulantes)","Vereadora Eliete (Pescadores)","Secretaria de Saúde (Moradores)",
+          "Bahia Sem Fome (Beneficiários)"]
+SRC = ["A-88","Z-67","Ministério","SEMOP","Vereadora","Saúde","Sem Fome"]
 NUCLEO = {"São Tomé de Paripe","Tubarão"}
 BASE_COLS = ["ID_Pessoa_Unico","Nome","CPF_Mascarado","Categoria_Principal","Todas_Categorias",
              "Bairro_Consolidado","Bairros_Todos","Logradouro","Faixa_Etaria","Sexo","Raca_Cor",

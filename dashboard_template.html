@@ -59,7 +59,7 @@ select{font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radiu
 <div class="card"><h3>Faixa etária <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chFaixa"></canvas></div></div>
 <div class="card"><h3>Sexo <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chSexo"></canvas></div></div>
 <div class="card"><h3>Pessoas por fonte (sobreposição) <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chSrc"></canvas></div></div>
-<div class="card"><h3>Presença em nº de fontes</h3><div class="cwrap"><canvas id="chNl"></canvas></div></div>
+<div class="card"><h3>Em quantas listas cada pessoa aparece <span>1 = citada por uma única fonte</span></h3><div class="cwrap"><canvas id="chNl"></canvas></div></div>
 <div class="card full"><h3>Duplicidades pendentes de revisão humana</h3><div id="dups"></div>
 <p class="note">Pares não fundidos automaticamente — exigem conferência antes do uso.</p></div>
 </div></div>
@@ -128,7 +128,9 @@ function render(){let rows=filtered();let n=rows.length;chips();
  let sc=Array(DATA.sources.length).fill(0);rows.forEach(r=>{for(let i=0;i<DATA.sources.length;i++)if(r[6]&(1<<i))sc[i]++;});
  mk('chSrc',bar(DATA.sources,sc,C.teal,false,clickH('src',DATA.sources)));
  let nl=[0,0,0,0,0,0,0];rows.forEach(r=>{if(r[5]>=1&&r[5]<=7)nl[r[5]-1]++;});
- mk('chNl',bar(['1','2','3','4','5','6','7'],nl,C.amber,false,null));
+ let mx=0;for(let k=6;k>=0;k--){if(nl[k]>0){mx=k;break;}}
+ let nlabs=['1 lista','2 listas','3 listas','4 listas','5 listas','6 listas','7 listas'].slice(0,mx+1);
+ mk('chNl',bar(nlabs,nl.slice(0,mx+1),C.amber,false,null));
  drawMap(rows);}
 let dh='';const L2={'Provável duplicidade':'prov','Possível duplicidade':'poss','Precisa de revisão humana':'rev'};
 Object.entries(DATA.dupc).forEach(([k,v])=>{dh+='<span class="pill '+(L2[k]||'rev')+'">'+k+': <b>'+v+'</b></span>';});
