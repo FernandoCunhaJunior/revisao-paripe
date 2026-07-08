@@ -16,9 +16,12 @@ LISTAS = ["Bahia Pesca A-88 (APEMJA)","Bahia Pesca Z-67","Ministério da Pesca (
           "Bahia Sem Fome (Beneficiários)"]
 SRC = ["A-88","Z-67","Ministério","SEMOP","Vereadora","Saúde","Sem Fome"]
 NUCLEO = {"São Tomé de Paripe","Tubarão"}
+FISHCAT = {"Pescador","Marisqueira","Ambulante","Barraqueiro","Pescador profissional (RGP)",
+           "Pescador/Marisqueira (Bahia Pesca)","Pescador/Marisqueira","Pescador/Marisqueira/Ambulante (Bahia Sem Fome)"}
+FISHLIST = ["Bahia Pesca","Ministério","SEMOP","Vereadora","Bahia Sem Fome"]
 BASE_COLS = ["ID_Pessoa_Unico","Nome","CPF_Mascarado","Categoria_Principal","Todas_Categorias",
              "Bairro_Consolidado","Bairros_Todos","Logradouro","Faixa_Etaria","Sexo","Raca_Cor",
-             "N_Listas","Listas_Origem","Familia_ID","Tamanho_Domicilio"]
+             "N_Listas","Listas_Origem","Familia_ID","Tamanho_Domicilio","PBF","BPC"]
 BAIRRO_XY = {
  "São Tomé de Paripe":[-12.8237,-38.4861],"Tubarão":[-12.8344,-38.4782],"Paripe":[-12.8417,-38.4679],
  "Paripe/Tubarão":[-12.8360,-38.4760],"Praia Grande":[-12.8727,-38.4774],"Plataforma":[-12.8946,-38.4831],
@@ -291,6 +294,86 @@ def pagina_familias():
     st.caption("Os arquivos abrem no Excel. Dados de uso restrito (LGPD).")
 
 
+def pagina_selecao():
+    st.subheader("🎯 Seleção priorizada (por família)")
+    st.caption("Ordena as famílias por uma pontuação de necessidade e seleciona as primeiras. "
+               "Ajuste os pesos e a quantidade conforme a entrega. Critério transparente e documentável.")
+    with st.spinner("Carregando base..."):
+        base = ler("Pessoas_Unicas")
+
+    st.markdown("**Quantidade a distribuir** (1 por família)")
+    alvo = st.number_input("Nº de itens/cestas", min_value=1, max_value=20000, value=1000, step=50)
+    st.markdown("**Pesos dos critérios** (quanto cada fator soma na pontuação da família)")
+    c1, c2, c3 = st.columns(3)
+    w_renda = c1.slider("Perda de renda (pesca/ambulante)", 0.0, 5.0, 3.0, 0.5)
+    w_benef = c2.slider("Baixa renda (Bolsa Família/BPC)", 0.0, 5.0, 2.0, 0.5)
+    w_crianca = c3.slider("Tem criança/adolescente", 0.0, 5.0, 2.0, 0.5)
+    c4, c5, c6 = st.columns(3)
+    w_idoso = c4.slider("Tem idoso (60+)", 0.0, 5.0, 1.0, 0.5)
+    w_bpc = c5.slider("Tem BPC (deficiência)", 0.0, 5.0, 1.0, 0.5)
+    w_nucleo = c6.slider("Mora no núcleo (São Tomé/Tubarão)", 0.0, 5.0, 2.0, 0.5)
+    w_tam = st.slider("Por pessoa na família (até 4)", 0.0, 2.0, 0.5, 0.25)
+
+    fam = defaultdict(list)
+    for p in base: fam[t(p.get("Familia_ID")) or p.get("ID_Pessoa_Unico")].append(p)
+
+    def flags(mem):
+        def has(f): return any(f(p) for p in mem)
+        fisher = has(lambda p: t(p.get("Categoria_Principal")) in FISHCAT or
+                     any(l in t(p.get("Listas_Origem")) for l in FISHLIST))
+        benef = has(lambda p: t(p.get("PBF")) == "Sim" or t(p.get("BPC")) == "Sim")
+        bpc = has(lambda p: t(p.get("BPC")) == "Sim")
+        crianca = has(lambda p: t(p.get("Faixa_Etaria")).startswith("0–11") or t(p.get("Faixa_Etaria")).startswith("12–17"))
+        idoso = has(lambda p: t(p.get("Faixa_Etaria")).startswith("60+"))
+        nucleo = has(lambda p: t(p.get("Bairro_Consolidado")) in NUCLEO or
+                     any(b.strip() in NUCLEO for b in t(p.get("Bairros_Todos")).split(";")))
+        try: size = int(mem[0].get("Tamanho_Domicilio") or len(mem))
+        except Exception: size = len(mem)
+        return fisher, benef, bpc, crianca, idoso, nucleo, size
+
+    linhas = []
+    for fid, mem in fam.items():
+        fisher, benef, bpc, crianca, idoso, nucleo, size = flags(mem)
+        score = (w_renda*fisher + w_benef*benef + w_bpc*bpc + w_crianca*crianca +
+                 w_idoso*idoso + w_nucleo*nucleo + w_tam*min(max(size-1, 0), 4))
+        linhas.append((score, fid, mem, dict(fisher=fisher, benef=benef, crianca=crianca, idoso=idoso, nucleo=nucleo, size=size)))
+    linhas.sort(key=lambda x: -x[0])
+    sel = linhas[:int(alvo)]
+
+    pessoas_cobertas = sum(len(m) for _, _, m, _ in sel)
+    corte = round(sel[-1][0], 1) if sel else 0
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Famílias selecionadas", f"{len(sel):,}".replace(",", "."))
+    m2.metric("Pessoas cobertas", f"{pessoas_cobertas:,}".replace(",", "."))
+    m3.metric("Com perda de renda", f"{sum(1 for *_ , f in sel if f['fisher']):,}".replace(",", "."))
+    m4.metric("Nota de corte", corte)
+
+    # tabela e exportação (famílias e pessoas)
+    def membros_str(m): return " | ".join(t(x.get("Nome")) for x in m)
+    frows = [{"Familia_ID": fid, "Pontuacao": round(sc, 2), "Tamanho": fl["size"],
+              "Bairro": t(m[0].get("Bairro_Consolidado")),
+              "Perda_Renda": "Sim" if fl["fisher"] else "", "Beneficio": "Sim" if fl["benef"] else "",
+              "Crianca": "Sim" if fl["crianca"] else "", "Idoso": "Sim" if fl["idoso"] else "",
+              "Membros": membros_str(m)} for sc, fid, m, fl in sel]
+    st.dataframe([{k: r[k] for k in ["Familia_ID","Pontuacao","Tamanho","Bairro","Perda_Renda","Beneficio","Crianca","Idoso"]} for r in frows][:500],
+                 use_container_width=True, height=340)
+
+    def csv_bytes(rows, columns):
+        buf = io.StringIO(); w = csv.DictWriter(buf, fieldnames=columns); w.writeheader()
+        for r in rows: w.writerow({c: r.get(c, "") for c in columns})
+        return buf.getvalue().encode("utf-8-sig")
+
+    fcols = ["Familia_ID","Pontuacao","Tamanho","Bairro","Perda_Renda","Beneficio","Crianca","Idoso","Membros"]
+    prows = [{"ID_Pessoa": t(x.get("ID_Pessoa_Unico")), "Nome": t(x.get("Nome")), "CPF_Masc": t(x.get("CPF_Mascarado")),
+              "Bairro": t(x.get("Bairro_Consolidado")), "Familia_ID": fid, "Pontuacao_Familia": round(sc, 2)}
+             for sc, fid, m, fl in sel for x in m]
+    pcols = ["ID_Pessoa","Nome","CPF_Masc","Bairro","Familia_ID","Pontuacao_Familia"]
+    d1, d2 = st.columns(2)
+    d1.download_button("⬇️ Exportar famílias selecionadas (CSV)", csv_bytes(frows, fcols), "selecao_familias.csv", "text/csv", use_container_width=True)
+    d2.download_button("⬇️ Exportar pessoas selecionadas (CSV)", csv_bytes(prows, pcols), "selecao_pessoas.csv", "text/csv", use_container_width=True)
+    st.caption("Registre os pesos e a data usados nesta seleção — isso torna o critério auditável e defensável. Dados restritos (LGPD).")
+
+
 def aplicar_revisoes():
     sh=planilha()
     base=sh.worksheet("Pessoas_Unicas").get_all_records()
@@ -385,7 +468,7 @@ def main():
     with st.sidebar:
         st.header("Revisão Paripe/Tubarão")
         revisor=st.text_input("Seu nome (revisor)", key="revisor")
-        pagina=st.radio("Página",["Painel","Famílias & Exportar","Endereços","Duplicidades","CPF inválido","Atualizar base"])
+        pagina=st.radio("Página",["Painel","Famílias & Exportar","Seleção","Endereços","Duplicidades","CPF inválido","Atualizar base"])
         if st.button("🔄 Recarregar dados"):
             for k in ["end","end_ws","dup","dup_ws","cpf","cpf_ws"]: st.session_state.pop(k,None)
             st.cache_data.clear(); st.rerun()
@@ -394,6 +477,7 @@ def main():
     try:
         if pagina=="Painel": pagina_painel()
         elif pagina=="Famílias & Exportar": pagina_familias()
+        elif pagina=="Seleção": pagina_selecao()
         elif pagina=="Endereços": pagina_enderecos(revisor)
         elif pagina=="Duplicidades": pagina_duplicidades(revisor)
         elif pagina=="CPF inválido": pagina_cpf(revisor)
