@@ -1,4 +1,4 @@
-import json, re, unicodedata
+import json, re, unicodedata, io, csv
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
@@ -18,7 +18,7 @@ SRC = ["A-88","Z-67","Ministério","SEMOP","Vereadora","Saúde","Sem Fome"]
 NUCLEO = {"São Tomé de Paripe","Tubarão"}
 BASE_COLS = ["ID_Pessoa_Unico","Nome","CPF_Mascarado","Categoria_Principal","Todas_Categorias",
              "Bairro_Consolidado","Bairros_Todos","Logradouro","Faixa_Etaria","Sexo","Raca_Cor",
-             "N_Listas","Listas_Origem"]
+             "N_Listas","Listas_Origem","Familia_ID","Tamanho_Domicilio"]
 BAIRRO_XY = {
  "São Tomé de Paripe":[-12.8237,-38.4861],"Tubarão":[-12.8344,-38.4782],"Paripe":[-12.8417,-38.4679],
  "Paripe/Tubarão":[-12.8360,-38.4760],"Praia Grande":[-12.8727,-38.4774],"Plataforma":[-12.8946,-38.4831],
@@ -65,7 +65,7 @@ def geocoded():
 # ---------------------------------------------------------------- painel ao vivo
 def build_data(base, pend_dup):
     geo=geocoded()
-    bairros,cats,faixas,sexos,racas,points,recs=[],[],[],[],[],[],[]
+    bairros,cats,faixas,sexos,racas,familias,points,recs=[],[],[],[],[],[],[],[]
     pkey={}
     def idx(lst,v):
         if v not in lst: lst.append(v)
@@ -93,9 +93,12 @@ def build_data(base, pend_dup):
             lat,lon=BAIRRO_XY[bn]; pt=gp(lat,lon,bn+" (centro do bairro)",False,b,bn in NUCLEO)
         try: nl=int(p.get("N_Listas") or 1)
         except: nl=1
-        recs.append([b,c,fx,sx,rc,nl,mask,pt])
+        fi=idx(familias, t(p.get("Familia_ID")) or "?")
+        try: tam=int(p.get("Tamanho_Domicilio") or 1)
+        except: tam=1
+        recs.append([b,c,fx,sx,rc,nl,mask,pt,fi,tam])
     return dict(bairros=bairros,cats=cats,faixas=faixas,sexos=sexos,racas=racas,sources=SRC,
-                sourcesFull=LISTAS,recs=recs,points=points,brutos=21282,
+                sourcesFull=LISTAS,recs=recs,points=points,brutos=22192,
                 dups=pend_dup,dupc={"Pendentes de revisão":pend_dup},geoStreets=len(geo))
 
 def pagina_painel():
@@ -232,6 +235,62 @@ def pagina_cpf(revisor):
     if not revisor: st.caption("Informe seu nome na barra lateral para liberar os botões.")
 
 
+def pagina_familias():
+    st.subheader("👨‍👩‍👧 Famílias & Exportação")
+    st.caption("Filtre e exporte os dados (uso interno). Pensado para instruir pedidos de indenização por família.")
+    with st.spinner("Carregando base..."):
+        base = ler("Pessoas_Unicas")
+    bairros = sorted(set(t(p.get("Bairro_Consolidado")) for p in base if t(p.get("Bairro_Consolidado"))))
+    cats = sorted(set(t(p.get("Categoria_Principal")) for p in base if t(p.get("Categoria_Principal"))))
+    c1, c2, c3 = st.columns(3)
+    fb = c1.selectbox("Bairro", ["(todos)"] + bairros)
+    fc = c2.selectbox("Categoria", ["(todas)"] + cats)
+    ff = c3.selectbox("Fonte", ["(todas)"] + LISTAS)
+    c4, c5 = st.columns(2)
+    only_fam = c4.checkbox("Somente famílias com 2+ pessoas")
+    only_vuln = c5.checkbox("Somente com criança (0–17) ou idoso (60+)")
+
+    def match(p):
+        if fb != "(todos)" and t(p.get("Bairro_Consolidado")) != fb: return False
+        if fc != "(todas)" and t(p.get("Categoria_Principal")) != fc: return False
+        if ff != "(todas)" and ff not in t(p.get("Listas_Origem")): return False
+        if only_fam:
+            try:
+                if int(p.get("Tamanho_Domicilio") or 1) < 2: return False
+            except Exception: return False
+        if only_vuln:
+            fx = t(p.get("Faixa_Etaria"))
+            if not (fx.startswith("0–11") or fx.startswith("12–17") or fx.startswith("60+")): return False
+        return True
+
+    fil = [p for p in base if match(p)]
+    nfam = len(set(t(p.get("Familia_ID")) for p in fil))
+    st.markdown(f"**{len(fil):,}** pessoas · **{nfam:,}** famílias no recorte".replace(",", "."))
+
+    cols = ["ID_Pessoa_Unico","Nome","CPF_Mascarado","Bairro_Consolidado","Categoria_Principal",
+            "Familia_ID","Tamanho_Domicilio","Listas_Origem"]
+    tabela = [{c: t(p.get(c)) for c in cols} for p in fil]
+    st.dataframe(tabela[:500], use_container_width=True, height=360)
+    if len(tabela) > 500: st.caption(f"Mostrando 500 de {len(tabela)} — a exportação inclui todos.")
+
+    def csv_bytes(rows, columns):
+        buf = io.StringIO(); w = csv.DictWriter(buf, fieldnames=columns); w.writeheader()
+        for r in rows: w.writerow({c: r.get(c, "") for c in columns})
+        return buf.getvalue().encode("utf-8-sig")
+
+    fam = defaultdict(list)
+    for p in fil: fam[t(p.get("Familia_ID"))].append(p)
+    frows = [{"Familia_ID": fid, "Tamanho_Domicilio": t(m[0].get("Tamanho_Domicilio")),
+              "Membros_no_recorte": len(m), "Bairro": t(m[0].get("Bairro_Consolidado")),
+              "Membros": " | ".join(t(x.get("Nome")) for x in m)} for fid, m in fam.items()]
+    fcols = ["Familia_ID","Tamanho_Domicilio","Membros_no_recorte","Bairro","Membros"]
+
+    d1, d2 = st.columns(2)
+    d1.download_button("⬇️ Exportar pessoas (CSV)", csv_bytes(tabela, cols), "pessoas_recorte.csv", "text/csv", use_container_width=True)
+    d2.download_button("⬇️ Exportar famílias (CSV)", csv_bytes(frows, fcols), "familias_recorte.csv", "text/csv", use_container_width=True)
+    st.caption("Os arquivos abrem no Excel. Dados de uso restrito (LGPD).")
+
+
 def aplicar_revisoes():
     sh=planilha()
     base=sh.worksheet("Pessoas_Unicas").get_all_records()
@@ -326,7 +385,7 @@ def main():
     with st.sidebar:
         st.header("Revisão Paripe/Tubarão")
         revisor=st.text_input("Seu nome (revisor)", key="revisor")
-        pagina=st.radio("Página",["Painel","Endereços","Duplicidades","CPF inválido","Atualizar base"])
+        pagina=st.radio("Página",["Painel","Famílias & Exportar","Endereços","Duplicidades","CPF inválido","Atualizar base"])
         if st.button("🔄 Recarregar dados"):
             for k in ["end","end_ws","dup","dup_ws","cpf","cpf_ws"]: st.session_state.pop(k,None)
             st.cache_data.clear(); st.rerun()
@@ -334,6 +393,7 @@ def main():
         st.caption("Decisões gravam direto na planilha do Google, visíveis para toda a equipe.")
     try:
         if pagina=="Painel": pagina_painel()
+        elif pagina=="Famílias & Exportar": pagina_familias()
         elif pagina=="Endereços": pagina_enderecos(revisor)
         elif pagina=="Duplicidades": pagina_duplicidades(revisor)
         elif pagina=="CPF inválido": pagina_cpf(revisor)
