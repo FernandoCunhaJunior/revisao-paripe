@@ -124,6 +124,10 @@ def pagina_enderecos(revisor):
     lista=pend if st.checkbox("Mostrar só pendentes",True) else list(range(len(dados)))
     if not lista: st.success("Tudo revisado! 🎉"); return
     pos=st.session_state.get("ep",0)%len(lista); i=lista[pos]; r=dados[i]; linha=i+2
+    if t(r.get('Dup_Com_Endereco')).upper().startswith("SIM"):
+        st.warning(f"🔗 Esta pessoa tem um provável **duplicado que já possui endereço** "
+                   f"(bairro {r.get('Bairro_Na_Dup','?')}). O melhor é resolver na aba **Duplicidades** "
+                   f"(marcar 'Mesma pessoa'): o endereço entra sozinho e evita contar a pessoa duas vezes.")
     c1,c2=st.columns([3,2])
     with c1:
         st.markdown(f"### {r['Nome']}")
@@ -192,6 +196,42 @@ def pagina_duplicidades(revisor):
     if not revisor: st.caption("Informe seu nome na barra lateral para liberar os botões.")
 
 # ---------------------------------------------------------------- aplicar (o botão)
+def pagina_cpf(revisor):
+    st.subheader("🆔 Revisão de CPFs inválidos")
+    st.caption("CPFs reprovados no dígito verificador (provável erro de digitação). A correção do número em si "
+               "é feita no cadastro-mestre restrito; aqui registra-se a decisão.")
+    if "cpf" not in st.session_state:
+        st.session_state.cpf_ws = planilha().worksheet("Revisar_CPF_Invalido")
+        st.session_state.cpf = st.session_state.cpf_ws.get_all_records()
+    ws=st.session_state.cpf_ws; dados=st.session_state.cpf
+    pend=[i for i,r in enumerate(dados) if not t(r.get("Decisao"))]
+    st.progress((len(dados)-len(pend))/len(dados) if dados else 0,
+                text=f"{len(dados)-len(pend)} de {len(dados)} revisados · {len(pend)} pendentes")
+    lista=pend if st.checkbox("Mostrar só pendentes",True) else list(range(len(dados)))
+    if not lista: st.success("Tudo revisado! 🎉"); return
+    pos=st.session_state.get("cp",0)%len(lista); i=lista[pos]; r=dados[i]; linha=i+2
+    st.markdown(f"### {r['Nome']}")
+    st.write(f"**ID:** {r['ID_Pessoa']} · **CPF (mascarado):** {r['CPF_Masc']}")
+    st.write(f"**Listas:** {r['Listas_Origem']}")
+    if t(r.get("Existe_Mesmo_Nome_CPF_Valido")).startswith("Sim"):
+        st.info(f"🔎 Existe pessoa de **mesmo nome com CPF válido** (ID {r.get('ID_Sugerido','?')}). "
+                f"Provável mesma pessoa já cadastrada corretamente — confira antes de decidir.")
+    cpf_corr=st.text_input("CPF corrigido (opcional; registrado no cadastro-mestre restrito)", value=t(r.get("CPF_Corrigido")), key=f"c{i}")
+    obs=st.text_input("Observações", value=t(r.get("Observacoes")), key=f"oc{i}")
+    def salvar(dec):
+        d=datetime.now().strftime("%d/%m/%Y %H:%M")
+        vals=[dec, cpf_corr, revisor, d, obs]
+        ws.update(range_name=f"G{linha}", values=[vals])  # G..K
+        for k,v in zip(["Decisao","CPF_Corrigido","Revisor","Data_Revisao","Observacoes"],vals): dados[i][k]=v
+        st.session_state.cp=pos+1; st.rerun()
+    b1,b2,b3,b4=st.columns(4)
+    if b1.button("✏️ Corrigido",use_container_width=True,disabled=not revisor): salvar("Corrigido")
+    if b2.button("🟰 Mesma pessoa do ID sugerido",use_container_width=True,disabled=not revisor): salvar("Mesma pessoa (ID sugerido)")
+    if b3.button("⚠️ Confirmado inválido",use_container_width=True,disabled=not revisor): salvar("Confirmado inválido")
+    if b4.button("⏭️ Pular",use_container_width=True): st.session_state.cp=pos+1; st.rerun()
+    if not revisor: st.caption("Informe seu nome na barra lateral para liberar os botões.")
+
+
 def aplicar_revisoes():
     sh=planilha()
     base=sh.worksheet("Pessoas_Unicas").get_all_records()
@@ -286,9 +326,9 @@ def main():
     with st.sidebar:
         st.header("Revisão Paripe/Tubarão")
         revisor=st.text_input("Seu nome (revisor)", key="revisor")
-        pagina=st.radio("Página",["Painel","Endereços","Duplicidades","Atualizar base"])
+        pagina=st.radio("Página",["Painel","Endereços","Duplicidades","CPF inválido","Atualizar base"])
         if st.button("🔄 Recarregar dados"):
-            for k in ["end","end_ws","dup","dup_ws"]: st.session_state.pop(k,None)
+            for k in ["end","end_ws","dup","dup_ws","cpf","cpf_ws"]: st.session_state.pop(k,None)
             st.cache_data.clear(); st.rerun()
         if st.button("Sair"): st.session_state.clear(); st.rerun()
         st.caption("Decisões gravam direto na planilha do Google, visíveis para toda a equipe.")
@@ -296,6 +336,7 @@ def main():
         if pagina=="Painel": pagina_painel()
         elif pagina=="Endereços": pagina_enderecos(revisor)
         elif pagina=="Duplicidades": pagina_duplicidades(revisor)
+        elif pagina=="CPF inválido": pagina_cpf(revisor)
         else: pagina_aplicar()
     except Exception as e:
         st.error("Erro ao acessar a planilha. Confira o compartilhamento com a conta de serviço, "
