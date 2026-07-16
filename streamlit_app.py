@@ -21,7 +21,7 @@ FISHCAT = {"Pescador","Marisqueira","Ambulante","Barraqueiro","Pescador profissi
 FISHLIST = ["Bahia Pesca","Ministério","SEMOP","Vereadora","Bahia Sem Fome"]
 BASE_COLS = ["ID_Pessoa_Unico","Nome","CPF_Mascarado","Categoria_Principal","Todas_Categorias",
              "Bairro_Consolidado","Bairros_Todos","Logradouro","Faixa_Etaria","Sexo","Raca_Cor",
-             "N_Listas","Listas_Origem","Familia_ID","Tamanho_Domicilio","PBF","BPC"]
+             "N_Listas","Listas_Origem","Familia_ID","Tamanho_Domicilio","PBF","BPC","Situacao_RGP"]
 BAIRRO_XY = {
  "São Tomé de Paripe":[-12.8237,-38.4861],"Tubarão":[-12.8344,-38.4782],"Paripe":[-12.8417,-38.4679],
  "Paripe/Tubarão":[-12.8360,-38.4760],"Praia Grande":[-12.8727,-38.4774],"Plataforma":[-12.8946,-38.4831],
