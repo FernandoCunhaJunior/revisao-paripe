@@ -43,6 +43,7 @@ select{font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radiu
 <div class="fgroup"><label>Bairro</label><select id="fBairro"></select></div>
 <div class="fgroup"><label>Categoria</label><select id="fCat"></select></div>
 <div class="fgroup"><label>Fonte (lista)</label><select id="fSrc"></select></div>
+<div class="fgroup"><label>Situação (RGP)</label><select id="fSit"></select></div>
 <button class="reset" onclick="clearAll()">Limpar filtros</button></div>
 <div class="chips" id="chips"></div>
 <div class="kpis" id="kpis"></div>
@@ -51,13 +52,15 @@ select{font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radiu
 <div id="map"></div>
 <div class="legend"><span><i style="background:var(--red)"></i>Núcleo (São Tomé de Paripe / Tubarão)</span>
 <span><i style="background:var(--blue)"></i>Entorno</span>
+<span><i style="background:transparent;border:2px dashed var(--red);width:12px;height:12px;opacity:1"></i>Poligonal INEMA (1.300 m)</span>
 <span>● rua geocodificada &nbsp; ○ tracejado = centro do bairro</span>
 <span style="color:var(--muted)">Clique num círculo para filtrar pelo bairro.</span></div>
-<p class="note">Cada círculo é uma rua (ou o centro do bairro, quando a rua não foi geocodificada), dimensionado pela quantidade de pessoas no filtro. Sem marcação de residência individual — agregação por rua (LGPD).</p></div>
+<p class="note">Anel vermelho tracejado = poligonal do INEMA (raio 1.300 m). Cada círculo é uma rua (ou o centro do bairro, quando a rua não foi geocodificada), dimensionado pela quantidade de pessoas no filtro. Sem marcação de residência individual — agregação por rua (LGPD).</p></div>
 <div class="card"><h3>Pessoas por bairro <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chBairro"></canvas></div></div>
 <div class="card"><h3>Pessoas por categoria <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chCat"></canvas></div></div>
 <div class="card"><h3>Faixa etária <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chFaixa"></canvas></div></div>
 <div class="card"><h3>Sexo <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chSexo"></canvas></div></div>
+<div class="card"><h3>Situação documental — Bahia Pesca <span>carteira x protocolo</span></h3><div class="cwrap"><canvas id="chSit"></canvas></div></div>
 <div class="card"><h3>Pessoas por fonte (sobreposição) <span>clique p/ filtrar</span></h3><div class="cwrap"><canvas id="chSrc"></canvas></div></div>
 <div class="card"><h3>Em quantas listas cada pessoa aparece <span>1 = citada por uma única fonte</span></h3><div class="cwrap"><canvas id="chNl"></canvas></div></div>
 <div class="card"><h3>Famílias por tamanho (domicílio) <span>no recorte atual</span></h3><div class="cwrap"><canvas id="chFam"></canvas></div></div>
@@ -70,22 +73,23 @@ const DATA=__DATA__;
 const C={navy:'#16243f',blue:'#2e5496',teal:'#2a8a8a',amber:'#c98a1a',red:'#b5443a'};
 const PAL=['#2e5496','#2a8a8a','#c98a1a','#b5443a','#6a5acd','#3a9b6e','#9c6ade','#c0607a','#5b7fb5','#7a8aa0'];
 const $=id=>document.getElementById(id);
-let F={bairro:'',cat:'',src:'',faixa:'',sexo:''};
+let F={bairro:'',cat:'',src:'',faixa:'',sexo:'',sit:''};
 function fillSel(id,arr,all,fkey){let s=$(id);s.innerHTML='<option value="">'+all+'</option>';
  arr.forEach((v,i)=>{let o=document.createElement('option');o.value=i;o.textContent=v;s.appendChild(o);});
  s.onchange=()=>{F[fkey]=s.value;render();};}
 fillSel('fBairro',DATA.bairros,'Todos os bairros','bairro');
 fillSel('fCat',DATA.cats,'Todas as categorias','cat');
 fillSel('fSrc',DATA.sourcesFull,'Todas as fontes','src');
-function clearAll(){F={bairro:'',cat:'',src:'',faixa:'',sexo:''};syncSel();render();}
-function syncSel(){$('fBairro').value=F.bairro;$('fCat').value=F.cat;$('fSrc').value=F.src;}
+if(DATA.rgp)fillSel('fSit',DATA.rgp,'Todas as situações','sit');
+function clearAll(){F={bairro:'',cat:'',src:'',faixa:'',sexo:'',sit:''};syncSel();render();}
+function syncSel(){$('fBairro').value=F.bairro;$('fCat').value=F.cat;$('fSrc').value=F.src;if($('fSit'))$('fSit').value=F.sit;}
 function toggle(fkey,i){i=String(i);F[fkey]=(F[fkey]===i)?'':i;syncSel();render();}
 function filtered(){return DATA.recs.filter(r=>
  (F.bairro===''||r[0]==F.bairro)&&(F.cat===''||r[1]==F.cat)&&(F.faixa===''||r[2]==F.faixa)&&
- (F.sexo===''||r[3]==F.sexo)&&(F.src===''||(r[6]&(1<<F.src))));}
+ (F.sexo===''||r[3]==F.sexo)&&(F.src===''||(r[6]&(1<<F.src)))&&(F.sit===''||r[10]==F.sit));}
 function cnt(rows,k,n){let a=Array(n).fill(0);rows.forEach(r=>a[r[k]]++);return a;}
-function chips(){let labs={bairro:DATA.bairros,cat:DATA.cats,faixa:DATA.faixas,sexo:DATA.sexos,src:DATA.sources};
- let names={bairro:'Bairro',cat:'Categoria',faixa:'Faixa',sexo:'Sexo',src:'Fonte'};let h='';
+function chips(){let labs={bairro:DATA.bairros,cat:DATA.cats,faixa:DATA.faixas,sexo:DATA.sexos,src:DATA.sources,sit:DATA.rgp||[]};
+ let names={bairro:'Bairro',cat:'Categoria',faixa:'Faixa',sexo:'Sexo',src:'Fonte',sit:'Situação'};let h='';
  Object.keys(F).forEach(k=>{if(F[k]!==''){h+='<span class="chip" onclick="toggle(\''+k+'\','+F[k]+')"><b>'+names[k]+':</b> '+labs[k][F[k]]+' ✕</span>';}});
  $('chips').innerHTML=h||'<span class="hint">Nenhum filtro ativo — clique nas barras, no mapa ou use os menus acima.</span>';}
 let ch={};
@@ -95,10 +99,12 @@ function bar(l,d,col,h,onclick){return{type:'bar',data:{labels:l,datasets:[{data
  options:{indexAxis:h?'y':'x',responsive:true,maintainAspectRatio:false,onClick:onclick,
  onHover:(e,el)=>{e.native.target.style.cursor=el.length?'pointer':'default';},
  plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:11}}},y:{ticks:{font:{size:11}}}}}};}
-let map,layer;
+let map,layer,polig;
 function initMap(){map=L.map('map',{scrollWheelZoom:false}).setView([-12.83,-38.478],14);
  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
- layer=L.layerGroup().addTo(map);}
+ layer=L.layerGroup().addTo(map);
+ if(DATA.poligonal&&DATA.poligonal.length){polig=L.polygon(DATA.poligonal,{color:'#b5443a',weight:2.5,dashArray:'7 5',fill:true,fillColor:'#b5443a',fillOpacity:0.05,interactive:false}).addTo(map);polig.bindTooltip('Poligonal INEMA — raio 1.300 m',{sticky:true});}
+}
 function drawMap(rows){layer.clearLayers();let agg={};
  rows.forEach(r=>{if(r[7]>=0)agg[r[7]]=(agg[r[7]]||0)+1;});
  let max=Math.max(1,...Object.values(agg));let pts=[];
@@ -113,11 +119,14 @@ function drawMap(rows){layer.clearLayers();let agg={};
 function kpi(v,l){return '<div class="kpi"><div class="v">'+v.toLocaleString('pt-BR')+'</div><div class="l">'+l+'</div></div>';}
 function render(){let rows=filtered();let n=rows.length;chips();
  let multi=rows.filter(r=>r[5]>1).length;let nb=new Set(rows.map(r=>r[0])).size;
+ let nPolig=rows.filter(r=>r[7]>=0&&DATA.points[r[7]]&&DATA.points[r[7]][6]===1).length;
+ let nProt=rows.filter(r=>r[10]===1).length;
  let fmap={};rows.forEach(r=>{fmap[r[8]]=r[9];});
  let nfam=Object.keys(fmap).length, nfam2=Object.values(fmap).filter(x=>x>=2).length;
  $('kpis').innerHTML=kpi(n,'Pessoas únicas (filtro)')+kpi(DATA.brutos,'Registros brutos')
   +kpi(multi,'Em mais de uma fonte')+kpi(nb,'Bairros no filtro')
-  +kpi(nfam,'Famílias no recorte')+kpi(nfam2,'Famílias com 2+ pessoas');
+  +kpi(nfam,'Famílias no recorte')+kpi(nfam2,'Famílias com 2+ pessoas')
+  +kpi(nPolig,'Em ruas na poligonal (1.300 m)')+kpi(nProt,'Bahia Pesca — só protocolo');
  let cb=cnt(rows,0,DATA.bairros.length);let bi=DATA.bairros.map((b,i)=>[b,cb[i]]).filter(x=>x[1]).sort((a,b)=>b[1]-a[1]).slice(0,10);
  mk('chBairro',bar(bi.map(x=>x[0]),bi.map(x=>x[1]),bi.map(x=>(x[0]==='São Tomé de Paripe'||x[0]==='Tubarão')?C.red:C.blue),true,clickH('bairro',DATA.bairros)));
  let cc=cnt(rows,1,DATA.cats.length);let ci=DATA.cats.map((c,i)=>[c,cc[i]]).filter(x=>x[1]).sort((a,b)=>b[1]-a[1]);
@@ -138,6 +147,9 @@ function render(){let rows=filtered();let n=rows.length;chips();
  let sz={};Object.values(fmap).forEach(t=>{let k=t>=8?'8+':String(t);sz[k]=(sz[k]||0)+1;});
  let so=['1','2','3','4','5','6','7','8+'].filter(k=>sz[k]);
  mk('chFam',bar(so.map(k=>k+(k==='1'?' pessoa':' pessoas')),so.map(k=>sz[k]),C.teal,false,null));
+ if(DATA.rgp){let crg=[0,0,0];rows.forEach(r=>{if(r[10]>=0)crg[r[10]]++;});
+ let rgi=DATA.rgp.map((s,i)=>[s,crg[i]]).filter(x=>x[1]);
+ mk('chSit',bar(rgi.map(x=>x[0]),rgi.map(x=>x[1]),rgi.map((_,i)=>PAL[i%PAL.length]),true,clickH('sit',DATA.rgp)));}
  drawMap(rows);}
 let dh='';const L2={'Provável duplicidade':'prov','Possível duplicidade':'poss','Precisa de revisão humana':'rev'};
 Object.entries(DATA.dupc).forEach(([k,v])=>{dh+='<span class="pill '+(L2[k]||'rev')+'">'+k+': <b>'+v+'</b></span>';});

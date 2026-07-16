@@ -65,9 +65,24 @@ def geocoded():
     p = PASTA/"geocoded.json"
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
+@st.cache_data(ttl=120)
+def poligonal_ring():
+    p = PASTA/"poligonal.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+
+def _in_poligonal(lat, lon, ring):
+    if not ring: return False
+    ins=False; n=len(ring)
+    for i in range(n):
+        y1,x1=ring[i]; y2,x2=ring[(i+1)%n]   # ring guardado como [lat,lon]
+        if ((y1>lat)!=(y2>lat)) and (lon < (x2-x1)*(lat-y1)/(y2-y1)+x1): ins=not ins
+    return ins
+
+RGP_VALS = ["Carteira (RGP)", "Protocolo", "Sem registro"]
+
 # ---------------------------------------------------------------- painel ao vivo
 def build_data(base, pend_dup):
-    geo=geocoded()
+    geo=geocoded(); ring=poligonal_ring()
     bairros,cats,faixas,sexos,racas,familias,points,recs=[],[],[],[],[],[],[],[]
     pkey={}
     def idx(lst,v):
@@ -75,7 +90,7 @@ def build_data(base, pend_dup):
         return lst.index(v)
     def gp(lat,lon,label,street,bidx,nuc):
         k=f"{lat:.5f},{lon:.5f}"
-        if k not in pkey: pkey[k]=len(points); points.append([lat,lon,label,1 if street else 0,1 if nuc else 0,bidx])
+        if k not in pkey: pkey[k]=len(points); points.append([lat,lon,label,1 if street else 0,1 if nuc else 0,bidx,1 if _in_poligonal(lat,lon,ring) else 0])
         return pkey[k]
     for p in base:
         bn=t(p.get("Bairro_Consolidado"))
@@ -99,10 +114,12 @@ def build_data(base, pend_dup):
         fi=idx(familias, t(p.get("Familia_ID")) or "?")
         try: tam=int(p.get("Tamanho_Domicilio") or 1)
         except: tam=1
-        recs.append([b,c,fx,sx,rc,nl,mask,pt,fi,tam])
+        rg=t(p.get("Situacao_RGP")); rgi=RGP_VALS.index(rg) if rg in RGP_VALS else -1
+        recs.append([b,c,fx,sx,rc,nl,mask,pt,fi,tam,rgi])
     return dict(bairros=bairros,cats=cats,faixas=faixas,sexos=sexos,racas=racas,sources=SRC,
                 sourcesFull=LISTAS,recs=recs,points=points,brutos=22192,
-                dups=pend_dup,dupc={"Pendentes de revisão":pend_dup},geoStreets=len(geo))
+                dups=pend_dup,dupc={"Pendentes de revisão":pend_dup},geoStreets=len(geo),
+                poligonal=ring,rgp=RGP_VALS)
 
 def pagina_painel():
     st.subheader("📊 Painel da população afetada (ao vivo)")
@@ -249,14 +266,16 @@ def pagina_familias():
     fb = c1.selectbox("Bairro", ["(todos)"] + bairros)
     fc = c2.selectbox("Categoria", ["(todas)"] + cats)
     ff = c3.selectbox("Fonte", ["(todas)"] + LISTAS)
-    c4, c5 = st.columns(2)
+    c4, c5, c6 = st.columns(3)
     only_fam = c4.checkbox("Somente famílias com 2+ pessoas")
     only_vuln = c5.checkbox("Somente com criança (0–17) ou idoso (60+)")
+    fs = c6.selectbox("Situação (RGP)", ["(todas)","Carteira (RGP)","Protocolo","Sem registro"])
 
     def match(p):
         if fb != "(todos)" and t(p.get("Bairro_Consolidado")) != fb: return False
         if fc != "(todas)" and t(p.get("Categoria_Principal")) != fc: return False
         if ff != "(todas)" and ff not in t(p.get("Listas_Origem")): return False
+        if fs != "(todas)" and t(p.get("Situacao_RGP")) != fs: return False
         if only_fam:
             try:
                 if int(p.get("Tamanho_Domicilio") or 1) < 2: return False
@@ -271,7 +290,7 @@ def pagina_familias():
     st.markdown(f"**{len(fil):,}** pessoas · **{nfam:,}** famílias no recorte".replace(",", "."))
 
     cols = ["ID_Pessoa_Unico","Nome","CPF_Mascarado","Bairro_Consolidado","Categoria_Principal",
-            "Familia_ID","Tamanho_Domicilio","Listas_Origem"]
+            "Situacao_RGP","Familia_ID","Tamanho_Domicilio","Listas_Origem"]
     tabela = [{c: t(p.get(c)) for c in cols} for p in fil]
     st.dataframe(tabela[:500], use_container_width=True, height=360)
     if len(tabela) > 500: st.caption(f"Mostrando 500 de {len(tabela)} — a exportação inclui todos.")
@@ -301,18 +320,24 @@ def pagina_selecao():
     with st.spinner("Carregando base..."):
         base = ler("Pessoas_Unicas")
 
-    st.markdown("**Quantidade a distribuir** (1 por família)")
-    alvo = st.number_input("Nº de itens/cestas", min_value=1, max_value=20000, value=1000, step=50)
+    st.markdown("**Universo e meta**")
+    cu1, cu2 = st.columns(2)
+    so_nucleo = cu1.checkbox("Somente núcleo/poligonal (São Tomé de Paripe / Tubarão)", value=True)
+    modo = cu2.radio("Meta por", ["Pessoas cobertas", "Número de famílias"], horizontal=True)
+    alvo = st.number_input("Meta (nº de pessoas OU de famílias, conforme acima)",
+                           min_value=1, max_value=25000, value=1500, step=50)
     st.markdown("**Pesos dos critérios** (quanto cada fator soma na pontuação da família)")
     c1, c2, c3 = st.columns(3)
-    w_renda = c1.slider("Perda de renda (pesca/ambulante)", 0.0, 5.0, 3.0, 0.5)
+    w_renda = c1.slider("Perda de renda (pesca/ambulante)", 0.0, 5.0, 4.0, 0.5)
     w_benef = c2.slider("Baixa renda (Bolsa Família/BPC)", 0.0, 5.0, 2.0, 0.5)
     w_crianca = c3.slider("Tem criança/adolescente", 0.0, 5.0, 2.0, 0.5)
     c4, c5, c6 = st.columns(3)
-    w_idoso = c4.slider("Tem idoso (60+)", 0.0, 5.0, 1.0, 0.5)
+    w_idoso = c4.slider("Tem idoso (60+)", 0.0, 5.0, 2.0, 0.5)
     w_bpc = c5.slider("Tem BPC (deficiência)", 0.0, 5.0, 1.0, 0.5)
     w_nucleo = c6.slider("Mora no núcleo (São Tomé/Tubarão)", 0.0, 5.0, 2.0, 0.5)
     w_tam = st.slider("Por pessoa na família (até 4)", 0.0, 2.0, 0.5, 0.25)
+    if so_nucleo:
+        st.caption("Universo restrito ao núcleo: o fator 'núcleo' é constante e não diferencia as famílias nesta leva.")
 
     fam = defaultdict(list)
     for p in base: fam[t(p.get("Familia_ID")) or p.get("ID_Pessoa_Unico")].append(p)
@@ -334,11 +359,20 @@ def pagina_selecao():
     linhas = []
     for fid, mem in fam.items():
         fisher, benef, bpc, crianca, idoso, nucleo, size = flags(mem)
+        if so_nucleo and not nucleo: continue
+        ncrit = int(fisher)+int(benef)+int(bpc)+int(crianca)+int(idoso)
         score = (w_renda*fisher + w_benef*benef + w_bpc*bpc + w_crianca*crianca +
-                 w_idoso*idoso + w_nucleo*nucleo + w_tam*min(max(size-1, 0), 4))
-        linhas.append((score, fid, mem, dict(fisher=fisher, benef=benef, crianca=crianca, idoso=idoso, nucleo=nucleo, size=size)))
-    linhas.sort(key=lambda x: -x[0])
-    sel = linhas[:int(alvo)]
+                 w_idoso*idoso + (0 if so_nucleo else w_nucleo)*nucleo + w_tam*min(max(size-1, 0), 4))
+        linhas.append((score, fid, mem, dict(fisher=fisher, benef=benef, crianca=crianca, idoso=idoso, nucleo=nucleo, size=size, ncrit=ncrit)))
+    # desempate: pontuação, tamanho da família, nº de critérios atendidos, ID
+    linhas.sort(key=lambda x: (-x[0], -x[3]["size"], -x[3]["ncrit"], x[1]))
+    if modo == "Número de famílias":
+        sel = linhas[:int(alvo)]
+    else:
+        sel = []; _cum = 0
+        for it in linhas:
+            sel.append(it); _cum += len(it[2])
+            if _cum >= int(alvo): break
 
     pessoas_cobertas = sum(len(m) for _, _, m, _ in sel)
     corte = round(sel[-1][0], 1) if sel else 0
