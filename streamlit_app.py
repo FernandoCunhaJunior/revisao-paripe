@@ -16,6 +16,7 @@ LISTAS = ["Bahia Pesca A-88 (APEMJA)","Bahia Pesca Z-67","Ministério da Pesca (
           "Bahia Sem Fome (Beneficiários)"]
 SRC = ["A-88","Z-67","Ministério","SEMOP","Vereadora","Saúde","Sem Fome"]
 NUCLEO = {"São Tomé de Paripe","Tubarão"}
+SAOTOME = "São Tomé de Paripe"
 FISHCAT = {"Pescador","Marisqueira","Ambulante","Barraqueiro","Pescador profissional (RGP)",
            "Pescador/Marisqueira (Bahia Pesca)","Pescador/Marisqueira","Pescador/Marisqueira/Ambulante (Bahia Sem Fome)"}
 FISHLIST = ["Bahia Pesca","Ministério","SEMOP","Vereadora","Bahia Sem Fome"]
@@ -497,12 +498,80 @@ def pagina_aplicar():
                 st.exception(e)
 
 # ---------------------------------------------------------------- principal
+def pagina_busca():
+    st.subheader("🔎 Buscar pessoa (foi selecionada?)")
+    st.caption("Digite parte do nome ou do CPF para verificar se a pessoa está na seleção da 1ª leva e, se não estiver, o motivo. "
+               "Usa os pesos finais: perda de renda +4, São Tomé de Paripe +4, baixa renda +2, criança +2, idoso +2, BPC +1, +0,5/pessoa.")
+    with st.spinner("Carregando base..."):
+        base = ler("Pessoas_Unicas")
+    meta = int(st.number_input("Meta de benefícios (famílias) desta leva", min_value=1, max_value=20000, value=2000, step=100))
+    W = dict(renda=4.0, saotome=4.0, benef=2.0, crianca=2.0, idoso=2.0, bpc=1.0, tam=0.5)
+    fam = defaultdict(list)
+    for p in base: fam[t(p.get("Familia_ID")) or p.get("ID_Pessoa_Unico")].append(p)
+    def is_fisher(p): return t(p.get("Categoria_Principal")) in FISHCAT or any(l in t(p.get("Listas_Origem")) for l in FISHLIST)
+    def flags(mem):
+        has=lambda f: any(f(p) for p in mem)
+        fisher=has(is_fisher)
+        benef=has(lambda p: t(p.get("PBF"))=="Sim" or t(p.get("BPC"))=="Sim")
+        bpc=has(lambda p: t(p.get("BPC"))=="Sim")
+        cri=has(lambda p: t(p.get("Faixa_Etaria")).startswith("0–11") or t(p.get("Faixa_Etaria")).startswith("12–17"))
+        ido=has(lambda p: t(p.get("Faixa_Etaria")).startswith("60+"))
+        nuc=has(lambda p: t(p.get("Bairro_Consolidado")) in NUCLEO or any(b.strip() in NUCLEO for b in t(p.get("Bairros_Todos")).split(";")))
+        sto=has(lambda p: t(p.get("Bairro_Consolidado"))==SAOTOME or any(b.strip()==SAOTOME for b in t(p.get("Bairros_Todos")).split(";")))
+        anyb=has(lambda p: t(p.get("Bairro_Consolidado")) or any(b.strip() for b in t(p.get("Bairros_Todos")).split(";")))
+        try: size=int(mem[0].get("Tamanho_Domicilio") or len(mem))
+        except Exception: size=len(mem)
+        size=max(size,len(mem))
+        return fisher,benef,bpc,cri,ido,nuc,sto,(not anyb),size
+    finfo={}; fishers=[]; nonf=[]
+    for fid,mem in fam.items():
+        fisher,benef,bpc,cri,ido,nuc,sto,semend,size=flags(mem)
+        elig = nuc or (fisher and semend)
+        d=dict(nuc=nuc,sto=sto,fisher=fisher,semend=semend,score=None)
+        if elig:
+            sc=W['renda']*fisher+W['saotome']*sto+W['benef']*benef+W['bpc']*bpc+W['crianca']*cri+W['idoso']*ido+W['tam']*min(max(size-1,0),4)
+            d.update(score=round(sc,2),size=size)
+            (fishers if fisher else nonf).append((sc,size,fid))
+        finfo[fid]=d
+    nonf.sort(key=lambda x:(-x[0],-x[1],x[2]))
+    n_fish=len(fishers)
+    sel_ids=set(f[2] for f in fishers) | set(x[2] for x in nonf[:max(0,meta-n_fish)])
+    corte_nonf = nonf[max(0,meta-n_fish)-1][0] if (meta-n_fish>0 and len(nonf)>=meta-n_fish) else (nonf[-1][0] if nonf else 0)
+    st.caption(f"Regra: todos os pescadores/marisqueiras da área (núcleo + cadastro local sem endereço) são garantidos ({n_fish}); as demais vagas até {meta} vão para a maior pontuação (corte {round(corte_nonf,1)}).")
+    q = st.text_input("Nome ou CPF")
+    if not q.strip(): return
+    qn = sa(q); qd = re.sub(r"\D","",q)
+    res=[]
+    for p in base:
+        nome=t(p.get("Nome")); cpf=re.sub(r"\D","",t(p.get("CPF_Mascarado")))
+        if (qn and qn in sa(nome)) or (len(qd)>=3 and qd in cpf): res.append(p)
+    if not res:
+        st.warning("Nenhuma pessoa encontrada com esse nome/CPF."); return
+    st.write(f"**{len(res)}** pessoa(s) encontrada(s):")
+    for p in res[:50]:
+        fid=t(p.get("Familia_ID")) or t(p.get("ID_Pessoa_Unico"))
+        info=finfo.get(fid,{}); nome=t(p.get("Nome")); bairro=t(p.get("Bairro_Consolidado"))
+        with st.container(border=True):
+            st.markdown(f"**{nome}**  ·  {bairro or 'bairro n/d'}  ·  família {fid}")
+            if not info.get("nuc"):
+                st.error("❌ NÃO selecionada — a família não reside no núcleo/poligonal (São Tomé de Paripe ou Tubarão), universo desta leva.")
+            elif fid in sel_ids:
+                base = ("pescador/marisqueira do núcleo (inclusão garantida)" if info.get("fisher") and not info.get("semend") else ("pescador/marisqueira da área — cadastro local sem endereço (inclusão garantida)" if info.get("fisher") else f"pontuação {info.get('score')} (≥ corte {round(corte_nonf,1)})"))
+                st.success(f"✅ SELECIONADA — {base}.")
+            else:
+                st.error(f"❌ NÃO selecionada nesta leva — não é família de pescador do núcleo e a pontuação {info.get('score')} ficou abaixo do corte {round(corte_nonf,1)}.")
+                faltam=[]
+                if not info.get("sto"): faltam.append("não reside em São Tomé de Paripe (epicentro, +4)")
+                if not info.get("fisher"): faltam.append("nenhum membro registrado como pescador/marisqueira (perda de renda, +4)")
+                if faltam: st.caption("Fatores de maior peso ausentes: "+"; ".join(faltam)+".")
+    if len(res)>50: st.caption(f"Mostrando 50 de {len(res)} — refine a busca.")
+
 def main():
     if not porta(): return
     with st.sidebar:
         st.header("Revisão Paripe/Tubarão")
         revisor=st.text_input("Seu nome (revisor)", key="revisor")
-        pagina=st.radio("Página",["Painel","Famílias & Exportar","Seleção","Endereços","Duplicidades","CPF inválido","Atualizar base"])
+        pagina=st.radio("Página",["Painel","Famílias & Exportar","Seleção","Buscar pessoa","Endereços","Duplicidades","CPF inválido","Atualizar base"])
         if st.button("🔄 Recarregar dados"):
             for k in ["end","end_ws","dup","dup_ws","cpf","cpf_ws"]: st.session_state.pop(k,None)
             st.cache_data.clear(); st.rerun()
@@ -512,6 +581,7 @@ def main():
         if pagina=="Painel": pagina_painel()
         elif pagina=="Famílias & Exportar": pagina_familias()
         elif pagina=="Seleção": pagina_selecao()
+        elif pagina=="Buscar pessoa": pagina_busca()
         elif pagina=="Endereços": pagina_enderecos(revisor)
         elif pagina=="Duplicidades": pagina_duplicidades(revisor)
         elif pagina=="CPF inválido": pagina_cpf(revisor)
