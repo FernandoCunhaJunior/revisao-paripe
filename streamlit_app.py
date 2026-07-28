@@ -50,7 +50,10 @@ checar_senha()
 
 
 def mascarar_cpf(cpf):
-    d = re.sub(r"\D", "", str(cpf))
+    s = str(cpf)
+    if "*" in s:            # já vem mascarado do arquivo (repo público)
+        return s
+    d = re.sub(r"\D", "", s)
     if len(d) == 11:
         return f"***.***.{d[6:9]}-**"
     return "—" if not d else "***"

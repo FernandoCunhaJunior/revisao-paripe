@@ -1,7 +1,6 @@
 import sys, types, runpy
 class Fake:
-    def __init__(self,page,termo=""):
-        self._page=page; self._termo=termo; self.sidebar=self; self.secrets={}; self.session_state={}
+    def __init__(self,page,termo=""): self._page=page; self._termo=termo; self.sidebar=self; self.secrets={}; self.session_state={}
     def __enter__(self): return self
     def __exit__(self,*a): return False
     def columns(self,n,*a,**k):
@@ -23,10 +22,10 @@ def run(pg,termo=""):
     pdk=types.ModuleType("pydeck")
     for n in ["Layer","ViewState","Deck"]: setattr(pdk,n,lambda *a,**k:None)
     sys.modules["pydeck"]=pdk
-    try: runpy.run_path("app.py",run_name="__main__"); return "OK"
+    try: runpy.run_path("streamlit_app.py",run_name="__main__"); return "OK"
     except SystemExit: return "OK(stop)"
     except Exception as e:
         import traceback; traceback.print_exc(); return f"ERRO {e}"
 for pg in ["📊 Painel","🔎 Busca e filtros","🧾 Verificação individual","🗺️ Mapa da poligonal"]:
     print(pg,"->",run(pg))
-print("Verif+termo ->", run("🧾 Verificação individual","MARIA"))
+print("Verif por nome KATIA ->", run("🧾 Verificação individual","KATIA"))
