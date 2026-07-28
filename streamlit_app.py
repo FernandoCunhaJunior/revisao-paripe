@@ -230,6 +230,18 @@ elif pagina == "🧾 Verificação individual":
                 st.error("❌ NÃO selecionado(a) nesta leva")
             st.write(f"**Motivo:** {p['motivo']}")
 
+            # pendências de cadastro (a sanar) — não desclassificam, mas devem ser corrigidas
+            pend = []
+            if not str(p.get("cpf", "")).strip():
+                pend.append("CPF ausente/inválido")
+            if not str(p.get("nasc", "")).strip():
+                pend.append("data de nascimento ausente")
+            if sel and pend:
+                st.warning("⚠️ **Selecionada, mas com cadastro a SANAR antes do pagamento:** "
+                           + "; ".join(pend) + ". Regularize o(s) dado(s) para viabilizar a indenização.")
+            if str(p.get("obs", "")).strip():
+                st.caption("📝 Observações / irregularidades: " + str(p["obs"]))
+
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
             with c1:
