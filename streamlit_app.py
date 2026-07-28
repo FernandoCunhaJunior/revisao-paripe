@@ -22,7 +22,7 @@ st.set_page_config(page_title="Beneficiários — São Tomé de Paripe", layout=
 
 DATA_CSV = "app_data.csv"
 POLY_JSON = "poligono.json"
-CORTE = 7.5
+CORTE = 6.5
 
 
 # ------------------------------------------------------------------ acesso (LGPD)
@@ -68,8 +68,21 @@ def carregar():
 
 @st.cache_data
 def carregar_poly():
-    with open(POLY_JSON, encoding="utf-8") as f:
-        return json.load(f)
+    import os
+    for fn in (POLY_JSON, "poligonal.json"):
+        if os.path.exists(fn):
+            try:
+                with open(fn, encoding="utf-8") as f:
+                    d = json.load(f)
+                if isinstance(d, dict) and d.get("polygon"):
+                    if not d.get("center"):
+                        lons = [p[0] for p in d["polygon"]]
+                        lats = [p[1] for p in d["polygon"]]
+                        d["center"] = [sum(lons) / len(lons), sum(lats) / len(lats)]
+                    return d
+            except Exception:
+                pass
+    return None
 
 df = carregar()
 poly = carregar_poly()
@@ -250,8 +263,8 @@ elif pagina == "🧾 Verificação individual":
                     st.table(dfc)
                 else:
                     st.write("Sem fatores pontuados.")
-                st.caption(f"Nota de corte para não-trabalhadores: {CORTE}. "
-                           "Trabalhadores da atividade entram independentemente da nota de corte.")
+                st.caption(f"Seleção por pontuação ponderada (1 titular por família). "
+                           f"Nota de corte: {CORTE}.")
             with colB:
                 st.markdown("**Domicílio / família**")
                 fam = p["_fk"]
@@ -269,6 +282,11 @@ elif pagina == "🗺️ Mapa da poligonal":
     st.title("🗺️ Mapa da poligonal (raio 1.300 m)")
     st.caption("Polígono do KML e pessoas georreferenciadas (por logradouro). "
                "Pessoas sem coordenada não aparecem no mapa.")
+
+    if not poly:
+        st.warning("Arquivo do polígono (poligono.json) não encontrado no repositório — "
+                   "o mapa fica indisponível, mas as demais páginas funcionam normalmente.")
+        st.stop()
 
     modo = st.radio("Mostrar", ["Todos com coordenada", "Somente selecionados", "Dentro x Fora"],
                     horizontal=True)
