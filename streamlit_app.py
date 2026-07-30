@@ -131,6 +131,11 @@ if pagina == "📊 Painel":
     fam = df.loc[df["fam"] != "", "fam"].nunique()
     sel = int((df["selecionado"] == "Sim").sum())
     sel_trab = int(((df["selecionado"] == "Sim") & (df["worker"] == "True")).sum())
+    if "grupo" in df.columns:
+        g1 = int(df["grupo"].astype(str).str.startswith("1").sum())
+    else:
+        g1 = sel_trab
+    g2 = sel - g1
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Pessoas únicas", f"{total:,}".replace(",", "."))
@@ -140,8 +145,8 @@ if pagina == "📊 Painel":
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("Dentro da poligonal", f"{dentro:,}".replace(",", "."))
     c6.metric("Selecionados (2.000)", f"{sel:,}".replace(",", "."))
-    c7.metric("Selec. trabalhadores", f"{sel_trab:,}".replace(",", "."))
-    c8.metric("Selec. por vulnerabilidade", f"{sel - sel_trab:,}".replace(",", "."))
+    c7.metric("Grupo 1 — perda de renda", f"{g1:,}".replace(",", "."))
+    c8.metric("Grupo 2 — perda nutricional", f"{g2:,}".replace(",", "."))
 
     st.markdown("---")
     a, b = st.columns(2)
@@ -225,7 +230,8 @@ elif pagina == "🧾 Verificação individual":
 
             sel = p["selecionado"] == "Sim"
             if sel:
-                st.success("✅ SELECIONADO(A) para a indenização")
+                grupo_txt = str(p.get("grupo", "")).strip()
+                st.success("✅ SELECIONADO(A) para a indenização" + (f" — {grupo_txt}" if grupo_txt else ""))
             else:
                 st.error("❌ NÃO selecionado(a) nesta leva")
             st.write(f"**Motivo:** {p['motivo']}")
